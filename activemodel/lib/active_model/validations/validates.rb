@@ -91,6 +91,8 @@ module ActiveModel
       # * <tt>:strict</tt> - If the <tt>:strict</tt> option is set to true
       #   will raise ActiveModel::StrictValidationFailed instead of adding the error.
       #   <tt>:strict</tt> option can also be set to any other exception.
+      #   <tt>:no_name</tt> specifies that you do not want the attribute name
+      #   prepended to error message
       #
       # Example:
       #
@@ -154,7 +156,7 @@ module ActiveModel
       # When creating custom validators, it might be useful to be able to specify
       # additional default keys. This can be done by overwriting this method.
       def _validates_default_keys
-        [:if, :unless, :on, :allow_blank, :allow_nil , :strict]
+        [:if, :unless, :on, :allow_blank, :allow_nil , :strict, :no_name]
       end
 
       def _parse_validates_options(options)

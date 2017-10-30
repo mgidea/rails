@@ -62,7 +62,7 @@ module ActiveModel
     CALLBACKS_OPTIONS = [:if, :unless, :on, :allow_nil, :allow_blank, :strict]
     MESSAGE_OPTIONS = [:message]
 
-    attr_reader :messages, :details
+    attr_reader :messages, :details, :no_name_messages
 
     # Pass in the instance of the object that is using the errors object.
     #
@@ -75,11 +75,13 @@ module ActiveModel
       @base     = base
       @messages = apply_default_array({})
       @details = apply_default_array({})
+      @no_name_messages = apply_default_array({})
     end
 
     def initialize_dup(other) # :nodoc:
       @messages = other.messages.dup
       @details  = other.details.deep_dup
+      @no_name_messages = other.no_name_messages.deep_dup
       super
     end
 
@@ -93,6 +95,7 @@ module ActiveModel
     def copy!(other) # :nodoc:
       @messages = other.messages.dup
       @details  = other.details.dup
+      @no_name_messages = other.no_name_messages.dup
     end
 
     # Merges the errors from <tt>other</tt>.
@@ -105,6 +108,7 @@ module ActiveModel
     def merge!(other)
       @messages.merge!(other.messages) { |_, ary1, ary2| ary1 + ary2 }
       @details.merge!(other.details) { |_, ary1, ary2| ary1 + ary2 }
+      @no_name_messages.merge!(other.no_name_messages) { |_, ary1, ary2| ary1 + ary2 } if @no_name_messages
     end
 
     # Clear the error messages.
@@ -115,6 +119,7 @@ module ActiveModel
     def clear
       messages.clear
       details.clear
+      no_name_messages.clear if respond_to?(:no_name_messages)
     end
 
     # Returns +true+ if the error messages include an error for the given key
@@ -138,6 +143,7 @@ module ActiveModel
     def delete(key)
       attribute = key.to_sym
       details.delete(attribute)
+      no_name_messages.delete(attribute)
       messages.delete(attribute)
     end
 
@@ -283,6 +289,13 @@ module ActiveModel
     #
     #   person.errors.messages # => {}
     #
+    # <tt>:no_name</tt> option should be set when the message that is triggered
+    # should not prepend the attribute name to the message
+    #
+    #   person.errors.add(:name, :required, message: "Your name is required", no_name: true)
+    #
+    #   will generate "Your name is required" instead of "Name Your name is required"
+    #
     # +attribute+ should be set to <tt>:base</tt> if the error is not
     # directly associated with a single attribute.
     #
@@ -296,6 +309,7 @@ module ActiveModel
       message = message.call if message.respond_to?(:call)
       detail  = normalize_detail(message, options)
       message = normalize_message(attribute, message, options)
+      handle_no_name_message(attribute, message, options)
       if exception = options[:strict]
         exception = ActiveModel::StrictValidationFailed if exception == true
         raise exception, full_message(attribute, message)
@@ -361,13 +375,17 @@ module ActiveModel
     #
     #   person.errors.full_message(:name, 'is invalid') # => "Name is invalid"
     def full_message(attribute, message)
-      return message if attribute == :base
+      return message if no_name_attribute?(attribute, message)
       attr_name = attribute.to_s.tr(".", "_").humanize
       attr_name = @base.class.human_attribute_name(attribute, default: attr_name)
       I18n.t(:"errors.format",
         default:  "%{attribute} %{message}",
         attribute: attr_name,
         message:   message)
+    end
+
+    def no_name_attribute?(attribute, message)
+      attribute == :base || no_name_messages[attribute].include?(message)
     end
 
     # Translates an error message in its default scope
@@ -427,20 +445,23 @@ module ActiveModel
     end
 
     def marshal_dump # :nodoc:
-      [@base, without_default_proc(@messages), without_default_proc(@details)]
+      [@base, without_default_proc(@messages), without_default_proc(@details), without_default_proc(@no_name_messages)]
     end
 
     def marshal_load(array) # :nodoc:
-      @base, @messages, @details = array
+      @base, @messages, @details, @no_name_messages = array
       apply_default_array(@messages)
       apply_default_array(@details)
+      apply_default_array(@no_name_messages)
     end
 
     def init_with(coder) # :nodoc:
       coder.map.each { |k, v| instance_variable_set(:"@#{k}", v) }
       @details ||= {}
+      @no_name_messages ||= {}
       apply_default_array(@messages)
       apply_default_array(@details)
+      apply_default_array(@no_name_messages)
     end
 
   private
@@ -455,6 +476,12 @@ module ActiveModel
 
     def normalize_detail(message, options)
       { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
+    end
+
+    def handle_no_name_message(attribute, message, options)
+      if options[:no_name]
+        no_name_messages[attribute] << message
+      end
     end
 
     def without_default_proc(hash)

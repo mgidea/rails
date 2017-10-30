@@ -173,6 +173,12 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal ["cannot be blank"], person.errors[:name]
   end
 
+  test "add an error with no_name option" do
+    person = Person.new
+    person.errors.add(:name, :required, message: "Your name is required", no_name: true)
+    assert_equal ["Your name is required"], person.errors.full_messages
+  end
+
   test "added? detects indifferent if a specific error was added to the object" do
     person = Person.new
     person.errors.add(:name, "cannot be blank")
